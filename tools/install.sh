@@ -6,18 +6,20 @@
 #
 
 usage() {
-printf "usage: %s [-D] [-l] [-m mode] src dest\n" "$0" 1>&2
+printf "usage: %s [-D] [-l] [-r] [-m mode] src dest\n" "$0" 1>&2
 exit 1
 }
 
 mkdirp=
 symlink=
+symlinkflags="-s"
 mode=755
 
-while getopts Dlm: name ; do
+while getopts Dlrm: name ; do
 case "$name" in
 D) mkdirp=yes ;;
 l) symlink=yes ;;
+r) symlink=yes; symlinkflags="$symlinkflags -r" ;;
 m) mode=$OPTARG ;;
 ?) usage ;;
 esac
@@ -49,7 +51,7 @@ umask 077
 
 if test "$symlink" ; then
 umask 000
-ln -s "$1" "$tmp"
+ln $symlinkflags "$1" "$tmp"
 umask 077
 else
 cat < "$1" > "$tmp"
