@@ -1,0 +1,36 @@
+dist: bionic
+sudo: required
+language: c
+compiler:
+- clang
+env:
+  matrix:
+  #- ANALYZE=1
+  - ANALYZE=0
+  global:
+   # The next declaration is the encrypted COVERITY_SCAN_TOKEN, created
+   #   via the "travis encrypt" command using the project repo's public key
+  - secure: "Lts0gdnm5ZpO0EBhK86Wi86y9spIaXGJr1uiJ1OX5NGmXyrniNx0myJsq9TW8q21pBCX83742VAOS/0ZOihMAW09tPxjkqP97waDIynu1L+eum58T68ftJX2vxtBiYpvD/OLSyy8iBZTVn1/NhcvT4HSHgmXdbu8ukVr1NKwc+R8msMPB9xEj+VIQJoiehzrRDdt5/PNvd4gudT2VYwI5i6RhLLqnIGyfKW3gnRAKYDW7j9KCjX9MA4uZ/V+PIcMBTqM897fccYLLRsAsNnjhH1CblhTVeiGpHAR+FWCL25220BMvUtRTnUw5EsxBntoicCuvOReoZIb/goWaF97mOrMjWECzVmPOYmdWG+U4LGK7tXwrRqfbOwWetwF1G4PpoiFs+DBQDhNWxvyHi+lcm4/T6jqlhZGzAcFF85mLacOgDyNLhg8mJ9GkkLMJcm53+tqNrlZgKayQZcpeOIFg/ceQrY+j6Y4u0Tu9J3ZCqtoHS3xxa5Oqkc1tEN+1W2sNPQp1rZyFkSsP1dHB/70K48jvah+duhO1TReUa1iojOLAMo283nNfvGYdgL+1eDUG9iEWP4dyMR5zEp5RJF5r9FkF1FizyYak1F7Kj/oCyYyPHpxL4BvSLUqWT4ehoCoYdqdiF5NWPQSgyIqGpnt2tcyS/6q2ONArtaIUP3gUQA="
+
+before_install:
+- echo -n | openssl s_client -connect scan.coverity.com:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | sudo tee -a /etc/ssl/certs/ca-
+- sudo pip install codecov
+
+addons:
+  coverity_scan:
+    project:
+      name: kraj/musl
+    notification_email: raj.khem@gmail.com
+    build_command_prepend: ./configure
+    build_command: make -j4
+    branch_pattern: coverity_scan
+install:
+- sudo apt-get update -qq
+- sudo apt-get install -y -qq clang lcov
+script:
+- if [ "${COVERITY_SCAN_BRANCH}" != 1 ]; then ./configure ; fi
+- if [ "${COVERITY_SCAN_BRANCH}" != 1 ]; then make -j4 ; fi
+- if [ "${ANALYZE}" = 1 ]; then make clean ; fi
+- if [ "${ANALYZE}" = 1 ]; then /usr/bin/scan-build --status-bugs -v make -j4 ; fi
+after_success:
+- codecov
