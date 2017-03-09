@@ -1,5 +1,5 @@
 
-    musl libc
+#    musl libc
 
 musl, pronounced like the word "mussel", is an MIT-licensed
 implementation of the standard C library targetting the Linux syscall
@@ -21,3 +21,10 @@ bootstrapping, and Linux distributions built on musl can be found on
 the project website:
 
     http://www.musl-libc.org/
+
+[![Build Status](https://travis-ci.org/kraj/musl.svg?branch=kraj%2Fmaster)](https://travis-ci.org/kraj/musl)
+<a href="https://scan.coverity.com/projects/kraj-musl">
+  <img alt="Coverity Scan Build Status"
+       src="https://scan.coverity.com/projects/12003/badge.svg"/>
+</a>
+[![license](https://img.shields.io/github/license/mashape/apistatus.svg)](https://github.com/kraj/musl/blob/kraj/master/COPYRIGHT)
