@@ -594,7 +594,7 @@ tryldflag LDFLAGS_AUTO -Wl,--dynamic-list="$srcdir/dynamic.list"
 # Find compiler runtime library
 test -z "$LIBCC" && try_libcc=`$CC -print-libgcc-file-name 2>/dev/null` \
                  && tryldflag LIBCC "$try_libcc"
-test -z "$LIBCC" && tryldflag LIBCC -lgcc && tryldflag LIBCC -lgcc_eh
+test -z "$LIBCC" && tryldflag LIBCC -lgcc && tryldflag LIBCC
 test -z "$LIBCC" && tryldflag LIBCC -lcompiler_rt
 test -z "$LIBCC" && try_libcc=`$CC -print-libgcc-file-name 2>/dev/null` \
                  && tryldflag LIBCC "$try_libcc"
