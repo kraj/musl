@@ -28,6 +28,7 @@
 #define calloc __libc_calloc
 #define realloc __libc_realloc
 #define free __libc_free
+#define SYS_PATH_DFLT SYSLIBDIR ":" LIBDIR
 
 static void error(const char *, ...);
 
@@ -1094,7 +1095,7 @@ static struct dso *load_library(const char *name, struct dso *needed_by)
 					sys_path = "";
 				}
 			}
-			if (!sys_path) sys_path = "/lib:/usr/local/lib:/usr/lib";
+			if (!sys_path) sys_path = SYS_PATH_DFLT;
 			fd = path_open(name, sys_path, buf, sizeof buf);
 		}
 		pathname = buf;
@@ -1263,7 +1264,7 @@ static void extend_bfs_deps(struct dso *p)
 		struct dso *dep = p->deps[i];
 		for (j=cnt=0; j<dep->ndeps_direct; j++)
 			if (!dep->deps[j]->mark) cnt++;
-		tmp = no_realloc ? 
+		tmp = no_realloc ?
 			malloc(sizeof(*tmp) * (ndeps_all+cnt+1)) :
 			realloc(p->deps, sizeof(*tmp) * (ndeps_all+cnt+1));
 		if (!tmp) {
@@ -1520,7 +1521,7 @@ static void do_init_fini(struct dso **queue)
 		if (p->ctor_visitor || p->constructed)
 			continue;
 		p->ctor_visitor = self;
-		
+
 		decode_vec(p->dynv, dyn, DYN_CNT);
 		if (dyn[0] & ((1<<DT_FINI) | (1<<DT_FINI_ARRAY))) {
 			p->fini_next = fini_head;
@@ -1631,7 +1632,7 @@ static void install_new_tls(void)
  * following stage 2 and stage 3 functions via primitive symbolic lookup
  * since it does not have access to their addresses to begin with. */
 
-/* Stage 2 of the dynamic linker is called after relative relocations 
+/* Stage 2 of the dynamic linker is called after relative relocations
  * have been processed. It can make function calls to static functions
  * and access string literals and static data, but cannot use extern
  * symbols. Its job is to perform symbolic relocations on the dynamic
