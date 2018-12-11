@@ -37,6 +37,8 @@ static size_t ldso_page_size;
 #define realloc __libc_realloc
 #define free __libc_free
 
+#define SYS_PATH_DFLT SYSLIBDIR ":" LIBDIR
+
 static void error_impl(const char *, ...);
 static void error_noop(const char *, ...);
 static void (*error)(const char *, ...) = error_noop;
@@ -1157,7 +1159,7 @@ static struct dso *load_library(const char *name, struct dso *needed_by)
 					sys_path = "";
 				}
 			}
-			if (!sys_path) sys_path = "/lib:/usr/local/lib:/usr/lib";
+			if (!sys_path) sys_path = SYS_PATH_DFLT;
 			fd = path_open(name, sys_path, buf, sizeof buf);
 		}
 		pathname = buf;
