@@ -45,6 +45,7 @@ static int fstatat_statx(int fd, const char *restrict path, struct stat *restric
 	return 0;
 }
 
+#ifdef SYS_fstatat
 static int fstatat_kstat(int fd, const char *restrict path, struct stat *restrict st, int flag)
 {
 	int ret;
@@ -106,15 +107,20 @@ static int fstatat_kstat(int fd, const char *restrict path, struct stat *restric
 
 	return 0;
 }
+#endif
 
 int fstatat(int fd, const char *restrict path, struct stat *restrict st, int flag)
 {
 	int ret;
+#ifdef SYS_fstatat
 	if (sizeof((struct kstat){0}.st_atime_sec) < sizeof(time_t)) {
 		ret = fstatat_statx(fd, path, st, flag);
 		if (ret!=-ENOSYS) return __syscall_ret(ret);
 	}
 	ret = fstatat_kstat(fd, path, st, flag);
+#else
+	ret = fstatat_statx(fd, path, st, flag);
+#endif
 	return __syscall_ret(ret);
 }
 
