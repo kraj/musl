@@ -16,7 +16,9 @@ static void do_setrlimit(void *p)
 {
 	struct ctx *c = p;
 	if (c->err>0) return;
+#ifdef SYS_setrlimit
 	c->err = -__syscall(SYS_setrlimit, c->res, c->lim);
+#endif
 }
 
 int setrlimit(int resource, const struct rlimit *rlim)
