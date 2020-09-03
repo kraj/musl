@@ -39,7 +39,6 @@ int faccessat(int fd, const char *filename, int amode, int flag)
 	char stack[1024];
 	sigset_t set;
 	pid_t pid;
-	int status;
 	int ret, p[2];
 
 	if (pipe2(p, O_CLOEXEC)) return __syscall_ret(-EBUSY);
@@ -53,7 +52,12 @@ int faccessat(int fd, const char *filename, int amode, int flag)
 	if (pid<0 || __syscall(SYS_read, p[0], &ret, sizeof ret) != sizeof(ret))
 		ret = -EBUSY;
 	__syscall(SYS_close, p[0]);
+#ifdef SYS_wait4
+	int status;
 	__syscall(SYS_wait4, pid, &status, __WCLONE, 0);
+#else
+	__syscall(SYS_waitid, P_PID, pid, &(siginfo_t){0}, __WCLONE|WEXITED, 0);
+#endif
 
 	__restore_sigs(&set);
 

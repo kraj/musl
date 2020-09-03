@@ -5,6 +5,8 @@
 #include <errno.h>
 #include <sys/syscall.h>
 #include "syscall_arch.h"
+#define __NEED_pid_t
+#include <bits/alltypes.h>
 
 #ifndef SYSCALL_RLIM_INFINITY
 #define SYSCALL_RLIM_INFINITY (~0ULL)
@@ -394,5 +396,15 @@ static inline long __alt_socketcall(int sys, int sock, int cp, long a, long b, l
 hidden void __procfdname(char __buf[static 15+3*sizeof(int)], unsigned);
 
 hidden void *__vdsosym(const char *, const char *);
+
+#ifdef SYS_wait4
+static inline pid_t __wait4(pid_t pid, int *status, int options, void *kru, int cp)
+{
+	if (cp) return __syscall_cp(SYS_wait4, pid, status, options, kru);
+	else return __syscall(SYS_wait4, pid, status, options, kru);
+}
+#else
+hidden pid_t __wait4(pid_t pid, int *status, int options, void *kru, int cp);
+#endif
 
 #endif
