@@ -1,3 +1,4 @@
+.file "crtn.s"
 .set noreorder
 
 .section .init

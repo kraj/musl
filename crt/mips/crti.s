@@ -1,3 +1,4 @@
+.file "crti.s"
 .set noreorder
 
 .section .init

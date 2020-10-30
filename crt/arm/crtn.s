@@ -1,3 +1,4 @@
+.file "crtn.s"
 .syntax unified
 
 .section .init

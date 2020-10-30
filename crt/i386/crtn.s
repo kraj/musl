@@ -1,3 +1,4 @@
+.file "crtn.s"
 .section .init
 	add $12,%esp
 	ret

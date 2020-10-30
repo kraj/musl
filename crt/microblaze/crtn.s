@@ -1,3 +1,4 @@
+.file "crtn.s"
 .section .init
 	lwi r15, r1, 0
 	rtsd r15, 8

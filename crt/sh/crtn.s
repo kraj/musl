@@ -1,3 +1,4 @@
+.file "crtn.s"
 .section .init
 	lds.l @r15+, pr
 	mov.l @r15+, r14

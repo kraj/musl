@@ -1,3 +1,4 @@
+.file "crtn.s"
 .set	noreorder
 .section	.init
 	ld	$gp, 16($sp)

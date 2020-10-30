@@ -1,3 +1,4 @@
+.file "crtn.s"
 .section .init
 .align 2
 	lmg  %r14, %r15, 272(%r15)

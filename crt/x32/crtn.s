@@ -1,3 +1,4 @@
+.file "crtn.s"
 .section .init
 	pop %rax
 	ret

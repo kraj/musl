@@ -1,3 +1,4 @@
+.file "crtn.s"
 .section .init
 .align 2
 	addi 1, 1, 32

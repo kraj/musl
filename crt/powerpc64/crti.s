@@ -1,3 +1,4 @@
+.file "crti.s"
 .section .init
 .align 2
 .global _init

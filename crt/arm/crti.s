@@ -1,3 +1,4 @@
+.file "crti.s"
 .syntax unified
 
 .section .init

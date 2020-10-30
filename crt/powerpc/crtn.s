@@ -1,3 +1,4 @@
+.file "crtn.s"
 .section .init
 .align 2
 	lwz 0,36(1)

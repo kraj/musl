@@ -1,3 +1,4 @@
+.file "crtn.s"
 .section .init
 	l.lwz	r9,0(r1)
 	l.jr	r9
