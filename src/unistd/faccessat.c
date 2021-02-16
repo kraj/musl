@@ -9,6 +9,7 @@ struct ctx {
 	const char *filename;
 	int amode;
 	int p;
+	int flag;
 };
 
 static int checker(void *p)
@@ -18,7 +19,7 @@ static int checker(void *p)
 	if (__syscall(SYS_setregid, __syscall(SYS_getegid), -1)
 	    || __syscall(SYS_setreuid, __syscall(SYS_geteuid), -1))
 		__syscall(SYS_exit, 1);
-	ret = __syscall(SYS_faccessat, c->fd, c->filename, c->amode, 0);
+	ret = __syscall(SYS_faccessat, c->fd, c->filename, c->amode, c->flag & AT_SYMLINK_NOFOLLOW);
 	__syscall(SYS_write, c->p, &ret, sizeof ret);
 	return 0;
 }
@@ -30,11 +31,11 @@ int faccessat(int fd, const char *filename, int amode, int flag)
 		if (ret != -ENOSYS) return __syscall_ret(ret);
 	}
 
-	if (flag & ~AT_EACCESS)
+	if (flag & ~(AT_EACCESS | AT_SYMLINK_NOFOLLOW))
 		return __syscall_ret(-EINVAL);
 
-	if (!flag || (getuid()==geteuid() && getgid()==getegid()))
-		return syscall(SYS_faccessat, fd, filename, amode);
+	if (!(flag & AT_EACCESS) || (getuid()==geteuid() && getgid()==getegid()))
+		return syscall(SYS_faccessat, fd, filename, amode, flag);
 
 	char stack[1024];
 	sigset_t set;
@@ -42,7 +43,7 @@ int faccessat(int fd, const char *filename, int amode, int flag)
 	int ret, p[2];
 
 	if (pipe2(p, O_CLOEXEC)) return __syscall_ret(-EBUSY);
-	struct ctx c = { .fd = fd, .filename = filename, .amode = amode, .p = p[1] };
+	struct ctx c = { .fd = fd, .filename = filename, .amode = amode, .p = p[1], .flag=flag };
 
 	__block_all_sigs(&set);
 	
