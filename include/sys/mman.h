@@ -98,6 +98,7 @@ extern "C" {
 #define MADV_POPULATE_READ 22
 #define MADV_POPULATE_WRITE 23
 #define MADV_DONTNEED_LOCKED 24
+#define MADV_COLLAPSE    25
 #define MADV_HWPOISON    100
 #define MADV_SOFT_OFFLINE 101
 #endif
