@@ -182,7 +182,9 @@ static int fmt_fp(FILE *f, long double y, int w, int p, int fl, int t, int ps)
 {
 	int max_mant_dig = (ps==BIGLPRE) ? LDBL_MANT_DIG : DBL_MANT_DIG;
 	int max_exp = (ps==BIGLPRE) ? LDBL_MAX_EXP : DBL_MAX_EXP;
-	int max_mant_slots = (max_mant_dig+28)/29 + 1;
+	/* One slot for 29 bits left of radix point, a slot for every 29-21=8
+	 * bits right of the radix point, and one final zero slot. */
+	int max_mant_slots = 1 + (max_mant_dig-29+7)/8 + 1;
 	int max_exp_slots = (max_exp+max_mant_dig+28+8)/9;
 	int bufsize = max_mant_slots + max_exp_slots;
 	uint32_t big[bufsize];
