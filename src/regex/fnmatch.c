@@ -155,7 +155,8 @@ static int match_bracket(const char *p, int k, int kfold)
 			if (l < 0) return 0;
 			p += l-1;
 		}
-		if (wc==k || wc==kfold) return !inv;
+		if ((wc==k || wc==kfold) && (p[1]!='-' || p[2]==']'))
+			return !inv;
 	}
 	return inv;
 }
