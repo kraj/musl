@@ -183,7 +183,7 @@ static int fnmatch_internal(const char *pat, size_t m, const char *str, size_t n
 		default:
 			k = str_next(str, n, &sinc);
 			if (k <= 0)
-				return (c==END) ? 0 : FNM_NOMATCH;
+				return (c==END && !k) ? 0 : FNM_NOMATCH;
 			str += sinc;
 			n -= sinc;
 			kfold = flags & FNM_CASEFOLD ? casefold(k) : k;
@@ -243,7 +243,7 @@ static int fnmatch_internal(const char *pat, size_t m, const char *str, size_t n
 		c = pat_next(p, endpat-p, &pinc, flags);
 		p += pinc;
 		if ((k = str_next(s, endstr-s, &sinc)) <= 0) {
-			if (c != END) return FNM_NOMATCH;
+			if (c != END || k < 0) return FNM_NOMATCH;
 			break;
 		}
 		s += sinc;
