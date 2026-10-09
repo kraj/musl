@@ -110,9 +110,9 @@ void *__libc_malloc(size_t n)
 	return __libc_malloc_impl(n);
 }
 
-static void *default_malloc(size_t n)
+hidden void *__libc_malloc_default(size_t n)
 {
 	return __libc_malloc_impl(n);
 }
 
-weak_alias(default_malloc, malloc);
+weak_alias(__libc_malloc_default, malloc);
