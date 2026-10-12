@@ -299,10 +299,9 @@ static long double decfloat(FILE *f, int c, int bits, int emin, int sign, int po
 
 	if ((e2+LDBL_MANT_DIG & INT_MAX) > emax-5) {
 		if (fabsl(y) >= 2/LDBL_EPSILON) {
-			if (denormal && bits==LDBL_MANT_DIG+e2-emin)
-				denormal = 0;
 			y *= 0.5;
 			e2++;
+			if (e2+LDBL_MANT_DIG >= -emax+3) denormal = 0;
 		}
 		if (e2+LDBL_MANT_DIG>emax || (denormal && frac))
 			errno = ERANGE;
