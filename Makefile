@@ -55,7 +55,10 @@ LDFLAGS_ALL = $(LDFLAGS_AUTO) $(LDFLAGS)
 
 AR      = $(CROSS_COMPILE)ar
 RANLIB  = $(CROSS_COMPILE)ranlib
+READELF = $(CROSS_COMPILE)readelf
 INSTALL = $(srcdir)/tools/install.sh
+
+STATIC_DLOPEN_OBJS = obj/ldso/dynlink-static.o obj/ldso/static-syms.o
 
 ARCH_INCLUDES = $(wildcard $(srcdir)/arch/$(ARCH)/bits/*.h)
 GENERIC_INCLUDES = $(wildcard $(srcdir)/arch/generic/bits/*.h)
@@ -110,6 +113,15 @@ obj/src/internal/version.o obj/src/internal/version.lo: obj/src/internal/version
 
 obj/crt/rcrt1.o obj/ldso/dlstart.lo obj/ldso/dynlink.lo: $(srcdir)/src/internal/dynlink.h $(srcdir)/arch/$(ARCH)/reloc.h
 
+obj/ldso/dynlink-static.o: $(srcdir)/ldso/dynlink.c $(srcdir)/src/internal/dynlink.h $(srcdir)/src/internal/static_dlopen.h $(GENH) $(IMPH)
+	$(CC) $(CFLAGS_ALL) $(CFLAGS_NOSSP) -DSTATIC_DLOPEN -c -o $@ $<
+
+obj/ldso/static-syms.c: $(AOBJS) $(srcdir)/tools/mkstatic-syms.sh
+	$(srcdir)/tools/mkstatic-syms.sh "$(READELF)" $(AOBJS) > $@
+
+obj/ldso/static-syms.o: obj/ldso/static-syms.c $(srcdir)/src/internal/dynlink.h $(srcdir)/src/internal/static_dlopen.h $(GENH) $(IMPH)
+	$(CC) $(CFLAGS_ALL) -c -o $@ $<
+
 obj/crt/crt1.o obj/crt/Scrt1.o obj/crt/rcrt1.o obj/ldso/dlstart.lo: $(srcdir)/arch/$(ARCH)/crt_arch.h
 
 obj/crt/rcrt1.o: $(srcdir)/ldso/dlstart.c
@@ -163,9 +175,9 @@ lib/libc.so: $(LOBJS) $(LDSO_OBJS)
 	$(CC) $(CFLAGS_ALL) $(LDFLAGS_ALL) -nostdlib -shared \
 	-Wl,-e,_dlstart -o $@ $(LOBJS) $(LDSO_OBJS) $(LIBCC)
 
-lib/libc.a: $(AOBJS)
+lib/libc.a: $(STATIC_DLOPEN_OBJS) $(AOBJS)
 	rm -f $@
-	$(AR) rc $@ $(AOBJS)
+	$(AR) rc $@ $(STATIC_DLOPEN_OBJS) $(AOBJS)
 	$(RANLIB) $@
 
 $(EMPTY_LIBS):
