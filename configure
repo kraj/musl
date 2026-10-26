@@ -356,6 +356,16 @@ tryflag CFLAGS_C99FSE -fexcess-precision=standard \
 tryflag CFLAGS_C99FSE -frounding-math
 
 #
+# The math library relies on floating point exception flags being
+# raised exactly as the C code would raise them. GCC does not move
+# floating point operations that may trap across branches by default
+# (-ftrapping-math), but clang assumes exceptions are never inspected
+# unless told otherwise, and may then evaluate both sides of a branch,
+# raising spurious exceptions (e.g. OVERFLOW from expm1, hypot, sinh).
+#
+tryflag CFLAGS_C99FSE -ffp-exception-behavior=maytrap
+
+#
 # Semantically we want to insist that our sources follow the
 # C rules for type-based aliasing, but most if not all real-world
 # compilers are known or suspected to have critical bugs in their
