@@ -1,5 +1,6 @@
 #include <math.h>
 #include <stdint.h>
+#pragma STDC FENV_ACCESS ON
 
 float hypotf(float x, float y)
 {
