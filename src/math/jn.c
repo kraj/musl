@@ -35,6 +35,7 @@
  */
 
 #include "libm.h"
+#pragma STDC FP_CONTRACT OFF
 
 static const double invsqrtpi = 5.64189583547756279280e-01; /* 0x3FE20DD7, 0x50429B6D */
 
