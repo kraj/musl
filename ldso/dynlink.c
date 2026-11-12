@@ -23,6 +23,9 @@
 #include "fork_impl.h"
 #include "libc.h"
 #include "dynlink.h"
+#ifdef STATIC_DLOPEN
+#include "static_dlopen.h"
+#endif
 
 static size_t ldso_page_size;
 /* libc.h may have defined a macro for dynamic PAGE_SIZE already, but
@@ -119,21 +122,30 @@ struct dso {
 		size_t *got;
 	} *funcdescs;
 	size_t *got;
+#ifdef STATIC_DLOPEN
+	const struct __dl_static_sym *static_syms;
+#endif
 	char buf[];
 };
 
 struct symdef {
 	Sym *sym;
 	struct dso *dso;
+#ifdef STATIC_DLOPEN
+	int is_static;
+#endif
 };
 
 typedef void (*stage3_func)(size_t *, size_t *);
 
-static struct builtin_tls {
+struct builtin_tls {
 	char c;
 	struct pthread pt;
 	void *space[16];
-} builtin_tls[1];
+};
+#ifndef STATIC_DLOPEN
+static struct builtin_tls builtin_tls[1];
+#endif
 #define MIN_TLS_ALIGN offsetof(struct builtin_tls, pt)
 
 #define ADDEND_LIMIT 4096
@@ -159,22 +171,29 @@ static pthread_cond_t ctor_cond;
 static struct dso *builtin_deps[2];
 static struct dso *const no_deps[1];
 static struct dso *builtin_ctor_queue[4];
+#ifndef STATIC_DLOPEN
 static struct dso **main_ctor_queue;
 static struct fdpic_loadmap *app_loadmap;
 static struct fdpic_dummy_loadmap app_dummy_loadmap;
+#endif
 
 struct debug *_dl_debug_addr = &debug;
 
 extern weak hidden char __ehdr_start[];
 
 extern hidden int __malloc_replaced;
+#ifdef STATIC_DLOPEN
+extern hidden void *__libc_malloc_default(size_t);
+#endif
 
+#ifndef STATIC_DLOPEN
 hidden void (*const __init_array_start)(void)=0, (*const __fini_array_start)(void)=0;
 
 extern hidden void (*const __init_array_end)(void), (*const __fini_array_end)(void);
 
 weak_alias(__init_array_start, __init_array_end);
 weak_alias(__fini_array_start, __fini_array_end);
+#endif
 
 static int dl_strcmp(const char *l, const char *r)
 {
@@ -324,13 +343,25 @@ static inline struct symdef find_sym2(struct dso *dso, const char *s, int need_d
 	struct symdef def = {0};
 	struct dso **deps = use_deps ? dso->deps : 0;
 	for (; dso; dso=use_deps ? *deps++ : dso->syms_next) {
-		Sym *sym;
+		Sym *sym = 0;
 		if ((ght = dso->ghashtab)) {
 			sym = gnu_lookup_filtered(gh, ght, dso, s, gho, ghm);
-		} else {
+		} else if (dso->hashtab) {
 			if (!h) h = sysv_hash(s);
 			sym = sysv_lookup(s, h, dso);
 		}
+#ifdef STATIC_DLOPEN
+		if (!sym && dso->static_syms) {
+			const struct __dl_static_sym *p;
+			for (p=dso->static_syms; p->name; p++) {
+				if (strcmp(s, p->name)) continue;
+				def.sym = (Sym *)&p->sym;
+				def.dso = dso;
+				def.is_static = 1;
+				return def;
+			}
+		}
+#endif
 		if (!sym) continue;
 		if (!sym->st_shndx)
 			if (need_def || (sym->st_info&0xf) == STT_TLS
@@ -351,6 +382,15 @@ static inline struct symdef find_sym2(struct dso *dso, const char *s, int need_d
 static struct symdef find_sym(struct dso *dso, const char *s, int need_def)
 {
 	return find_sym2(dso, s, need_def, 0);
+}
+
+static size_t symdef_value(struct symdef def)
+{
+	if (!def.sym) return 0;
+#ifdef STATIC_DLOPEN
+	if (def.is_static) return def.sym->st_value;
+#endif
+	return (size_t)laddr(def.dso, def.sym->st_value);
 }
 
 static struct symdef get_lfs64(const char *name)
@@ -456,7 +496,7 @@ static void do_relocs(struct dso *dso, size_t *rel, size_t rel_size, size_t stri
 			def.dso = dso;
 		}
 
-		sym_val = def.sym ? (size_t)laddr(def.dso, def.sym->st_value) : 0;
+		sym_val = symdef_value(def);
 		tls_val = def.sym ? def.sym->st_value : 0;
 
 		if ((type == REL_TPOFF || type == REL_TPOFF_NEG)
@@ -493,10 +533,27 @@ static void do_relocs(struct dso *dso, size_t *rel, size_t rel_size, size_t stri
 				- (size_t)reloc_addr;
 			break;
 		case REL_FUNCDESC:
-			*reloc_addr = def.sym ? (size_t)(def.dso->funcdescs
-				+ (def.sym - def.dso->syms)) : 0;
+			*reloc_addr = def.sym ?
+#ifdef STATIC_DLOPEN
+				(def.is_static ? sym_val :
+#endif
+				(size_t)(def.dso->funcdescs
+				+ (def.sym - def.dso->syms))
+#ifdef STATIC_DLOPEN
+				)
+#endif
+				: 0;
 			break;
 		case REL_FUNCDESC_VAL:
+#ifdef STATIC_DLOPEN
+			if (DL_FDPIC && def.is_static
+			    && (def.sym->st_info&0xf) == STT_FUNC) {
+				struct funcdesc *fd = (void *)sym_val;
+				reloc_addr[0] = (size_t)fd->addr;
+				reloc_addr[1] = (size_t)fd->got;
+				break;
+			}
+#endif
 			if ((sym->st_info&0xf) == STT_SECTION) *reloc_addr += sym_val;
 			else *reloc_addr = sym_val;
 			reloc_addr[1] = def.sym ? (size_t)def.dso->got : 0;
@@ -1101,12 +1158,16 @@ static struct dso *load_library(const char *name, struct dso *needed_by)
 	}
 	if (!strcmp(name, ldso.name)) is_self = 1;
 	if (is_self) {
+#ifdef STATIC_DLOPEN
+		return head;
+#else
 		if (!ldso.prev) {
 			tail->next = &ldso;
 			ldso.prev = tail;
 			tail = &ldso;
 		}
 		return &ldso;
+#endif
 	}
 	if (strchr(name, '/')) {
 		pathname = name;
@@ -1357,6 +1418,7 @@ static void extend_bfs_deps(struct dso *p)
 		p->mark = 0;
 }
 
+#ifndef STATIC_DLOPEN
 static void load_preload(char *s)
 {
 	int tmp;
@@ -1370,6 +1432,7 @@ static void load_preload(char *s)
 		*z = tmp;
 	}
 }
+#endif
 
 static void add_syms(struct dso *p)
 {
@@ -1471,7 +1534,11 @@ static void kernel_mapped_dso(struct dso *p)
 	p->kernel_mapped = 1;
 }
 
-void __libc_exit_fini()
+#ifdef STATIC_DLOPEN
+hidden void __dl_static_fini(void)
+#else
+void __libc_exit_fini(void)
+#endif
 {
 	struct dso *p;
 	size_t dyn[DYN_CNT];
@@ -1621,6 +1688,7 @@ static void do_init_fini(struct dso **queue)
 	pthread_mutex_unlock(&init_fini_lock);
 }
 
+#ifndef STATIC_DLOPEN
 void __libc_start_init(void)
 {
 	do_init_fini(main_ctor_queue);
@@ -1628,6 +1696,7 @@ void __libc_start_init(void)
 		free(main_ctor_queue);
 	main_ctor_queue = 0;
 }
+#endif
 
 static void dl_debug_state(void)
 {
@@ -1635,9 +1704,11 @@ static void dl_debug_state(void)
 
 weak_alias(dl_debug_state, _dl_debug_state);
 
+#ifndef STATIC_DLOPEN
 void __init_tls(size_t *auxv)
 {
 }
+#endif
 
 static void update_tls_size()
 {
@@ -1701,6 +1772,7 @@ static void install_new_tls(void)
 	__restore_sigs(&set);
 }
 
+#ifndef STATIC_DLOPEN
 /* Stage 1 of the dynamic linker is defined in dlstart.c. It calls the
  * following stage 2 and stage 3 functions via primitive symbolic lookup
  * since it does not have access to their addresses to begin with. */
@@ -2081,6 +2153,86 @@ void __dls3(size_t *sp, size_t *auxv)
 	CRTJMP((void *)aux[AT_ENTRY], argv-1);
 	for(;;);
 }
+#endif
+
+#ifdef STATIC_DLOPEN
+static pthread_once_t static_dl_once = PTHREAD_ONCE_INIT;
+
+/* Attach the dynamic loader to the process image which the kernel and the
+ * static startup code have already loaded and initialized. */
+static void static_dl_init(void)
+{
+	static struct dso app;
+	static size_t empty_dyn[1];
+	size_t aux[AUX_CNT];
+	struct tls_module *t;
+	Phdr *ph;
+	size_t i;
+
+	decode_vec(libc.auxv, aux, AUX_CNT);
+	ldso_page_size = libc.page_size;
+
+	app.name = (aux[0] & (1UL<<AT_EXECFN))
+		? (char *)aux[AT_EXECFN] : (char *)"/proc/self/exe";
+	app.phdr = (void *)aux[AT_PHDR];
+	app.phnum = aux[AT_PHNUM];
+	app.phentsize = aux[AT_PHENT];
+	ph = app.phdr;
+	for (i=app.phnum; i; i--, ph=(void *)((char *)ph+app.phentsize))
+		if (ph->p_type == PT_PHDR) {
+			app.base = (void *)(aux[AT_PHDR] - ph->p_vaddr);
+			break;
+		}
+	if (!i && __ehdr_start && ((Ehdr *)__ehdr_start)->e_type == ET_DYN)
+		app.base = (void *)__ehdr_start;
+	kernel_mapped_dso(&app);
+	if (app.dynv) decode_dyn(&app);
+	else app.dynv = empty_dyn;
+
+	app.static_syms = __dl_static_syms;
+	app.relocated = 1;
+	app.constructed = 1;
+	app.deps = (struct dso **)no_deps;
+	app.bfs_built = 1;
+	if (libc.tls_head) {
+		app.tls = *libc.tls_head;
+		app.tls_id = 1;
+	}
+
+	tls_cnt = static_tls_cnt = libc.tls_cnt;
+	tls_align = libc.tls_align;
+	for (t=libc.tls_head; t && t->next; t=t->next);
+	tls_tail = t;
+	if (t) {
+#ifdef TLS_ABOVE_TP
+		tls_offset = t->offset + t->size;
+#else
+		tls_offset = t->offset;
+#endif
+	}
+
+	head = tail = syms_tail = &app;
+	ldso.name = ldso.shortname = (char *)"libc.so";
+	ldso.static_syms = __dl_static_syms;
+	if (symdef_value(find_sym(head, "malloc", 1)) !=
+	    (size_t)__libc_malloc_default)
+		__malloc_replaced = 1;
+	env_path = libc.secure ? 0 : getenv("LD_LIBRARY_PATH");
+	error = error_impl;
+	set_errno = set_errno_impl;
+	runtime = 1;
+	debug.ver = 1;
+	debug.bp = dl_debug_state;
+	debug.head = head;
+	debug.base = app.base;
+	debug.state = RT_CONSISTENT;
+}
+
+static void static_dl_ensure_init(void)
+{
+	pthread_once(&static_dl_once, static_dl_init);
+}
+#endif
 
 static void prepare_lazy(struct dso *p)
 {
@@ -2114,6 +2266,9 @@ void *dlopen(const char *file, int mode)
 	jmp_buf jb;
 	struct dso **volatile ctor_queue = 0;
 
+#ifdef STATIC_DLOPEN
+	static_dl_ensure_init();
+#endif
 	if (!file) return head;
 
 	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cs);
@@ -2234,6 +2389,9 @@ end:
 hidden int __dl_invalid_handle(void *h)
 {
 	struct dso *p;
+#ifdef STATIC_DLOPEN
+	static_dl_ensure_init();
+#endif
 	for (p=head; p; p=p->next) if (h==p) return 0;
 	error("Invalid library handle %p", (void *)h);
 	return 1;
@@ -2244,6 +2402,9 @@ static void *addr2dso(size_t a)
 	struct dso *p;
 	size_t i;
 	if (DL_FDPIC) for (p=head; p; p=p->next) {
+#ifdef STATIC_DLOPEN
+		if (p->static_syms) continue;
+#endif
 		i = count_syms(p);
 		if (a-(size_t)p->funcdescs < i*sizeof(*p->funcdescs))
 			return p;
@@ -2292,6 +2453,9 @@ static void *do_dlsym(struct dso *p, const char *s, void *ra)
 	}
 	if ((def.sym->st_info&0xf) == STT_TLS)
 		return __tls_get_addr((tls_mod_off_t []){def.dso->tls_id, def.sym->st_value-DTP_OFFSET});
+#ifdef STATIC_DLOPEN
+	if (def.is_static) return (void *)symdef_value(def);
+#endif
 	if (DL_FDPIC && (def.sym->st_info&0xf) == STT_FUNC)
 		return def.dso->funcdescs + (def.sym - def.dso->syms);
 	return laddr(def.dso, def.sym->st_value);
@@ -2306,6 +2470,10 @@ int dladdr(const void *addr_arg, Dl_info *info)
 	char *strings;
 	size_t best = 0;
 	size_t besterr = -1;
+#ifdef STATIC_DLOPEN
+	const char *bestname = 0;
+	static_dl_ensure_init();
+#endif
 
 	pthread_rwlock_rdlock(&lock);
 	p = addr2dso(addr);
@@ -2315,7 +2483,23 @@ int dladdr(const void *addr_arg, Dl_info *info)
 
 	sym = p->syms;
 	strings = p->strings;
-	nsym = count_syms(p);
+	nsym = p->hashtab || p->ghashtab ? count_syms(p) : 0;
+
+#ifdef STATIC_DLOPEN
+	if (p->static_syms) {
+		const struct __dl_static_sym *q;
+		for (q=p->static_syms; q->name; q++) {
+			size_t symaddr = q->sym.st_value;
+			if (!symaddr || symaddr > addr || symaddr <= best)
+				continue;
+			best = symaddr;
+			bestsym = (Sym *)&q->sym;
+			bestname = q->name;
+			besterr = addr - symaddr;
+			if (addr == symaddr) break;
+		}
+	}
+#endif
 
 	if (DL_FDPIC) {
 		size_t idx = (addr-(size_t)p->funcdescs)
@@ -2336,6 +2520,9 @@ int dladdr(const void *addr_arg, Dl_info *info)
 				continue;
 			best = symaddr;
 			bestsym = sym;
+#ifdef STATIC_DLOPEN
+			bestname = 0;
+#endif
 			besterr = addr - symaddr;
 			if (addr == symaddr)
 				break;
@@ -2356,9 +2543,17 @@ int dladdr(const void *addr_arg, Dl_info *info)
 		return 1;
 	}
 
-	if (DL_FDPIC && (bestsym->st_info&0xf) == STT_FUNC)
+	if (DL_FDPIC &&
+#ifdef STATIC_DLOPEN
+	    !bestname &&
+#endif
+	    (bestsym->st_info&0xf) == STT_FUNC)
 		best = (size_t)(p->funcdescs + (bestsym - p->syms));
-	info->dli_sname = strings + bestsym->st_name;
+	info->dli_sname =
+#ifdef STATIC_DLOPEN
+		bestname ? bestname :
+#endif
+		strings + bestsym->st_name;
 	info->dli_saddr = (void *)best;
 
 	return 1;
@@ -2367,6 +2562,9 @@ int dladdr(const void *addr_arg, Dl_info *info)
 hidden void *__dlsym(void *restrict p, const char *restrict s, void *restrict ra)
 {
 	void *res;
+#ifdef STATIC_DLOPEN
+	static_dl_ensure_init();
+#endif
 	pthread_rwlock_rdlock(&lock);
 	res = do_dlsym(p, s, ra);
 	pthread_rwlock_unlock(&lock);
@@ -2375,6 +2573,9 @@ hidden void *__dlsym(void *restrict p, const char *restrict s, void *restrict ra
 
 hidden void *__dlsym_redir_time64(void *restrict p, const char *restrict s, void *restrict ra)
 {
+#ifdef STATIC_DLOPEN
+	static_dl_ensure_init();
+#endif
 #if _REDIR_TIME64
 	const char *suffix, *suffix2 = "";
 	char redir[36];
@@ -2405,6 +2606,9 @@ int dl_iterate_phdr(int(*callback)(struct dl_phdr_info *info, size_t size, void 
 	struct dso *current;
 	struct dl_phdr_info info;
 	int ret = 0;
+#ifdef STATIC_DLOPEN
+	static_dl_ensure_init();
+#endif
 	for(current = head; current;) {
 		info.dlpi_addr      = (uintptr_t)current->base;
 		info.dlpi_name      = current->name;
